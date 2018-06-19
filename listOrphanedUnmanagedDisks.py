@@ -21,7 +21,7 @@ def flattenjson( b, delim ):
 
 def processContainer(queue, acc, acc_key, container):
     print ('Checking container %s/%s' % (acc['name'], container['name']))
-    blobs_list = json.loads(subprocess.check_output(["az", "storage", "blob", "list", "--account-name", acc['name'], "--account-key", acc_key, "-c", container['name'], "--query", "[?ends_with(name, '.vhd') && properties.lease.status=='unlocked']"]))
+    blobs_list = json.loads(subprocess.check_output(["az", "storage", "blob", "list", "--account-name", acc['name'], "--account-key", acc_key, "-c", container['name'], "--query", "[?ends_with(name, '.vhd') && properties.lease.status=='unlocked']"]).decode('utf-8'))
     for x in blobs_list:
         x['path'] = '/'.join([acc['resourceGroup'], acc['name'], container['name'], x['name']])
     print ('Done checking container %s/%s' % (acc['name'], container['name']))
@@ -30,9 +30,9 @@ def processContainer(queue, acc, acc_key, container):
 
 def processAcc(queue, acc):
     print ('Getting key for acc %s' % acc['name'])
-    acc_key = json.loads(subprocess.check_output(["az", "storage", "account", "keys", "list", "-g", acc['resourceGroup'], "--account-name", acc['name']]))[0]['value']
+    acc_key = json.loads(subprocess.check_output(["az", "storage", "account", "keys", "list", "-g", acc['resourceGroup'], "--account-name", acc['name']]).decode('utf-8'))[0]['value']
     print ('Using acc: %s' % acc['name'])
-    container_list = json.loads(subprocess.check_output(["az", "storage", "container", "list", "--account-name", acc['name'], "--account-key", acc_key]))
+    container_list = json.loads(subprocess.check_output(["az", "storage", "container", "list", "--account-name", acc['name'], "--account-key", acc_key]).decode('utf-8'))
     print ('Getting containers list')
     blobs_list = []
     results = []
@@ -48,7 +48,7 @@ def processAcc(queue, acc):
 
 def main():
     print ('Getting accounts list')
-    acc_list = json.loads(subprocess.check_output(["az", "storage", "account", "list"]))
+    acc_list = json.loads(subprocess.check_output(["az", "storage", "account", "list"]).decode('utf-8'))
     print ('Starting processing')
     #pool = ThreadPool()
     disks_list = []
