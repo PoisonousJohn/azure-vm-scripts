@@ -3,6 +3,7 @@ from multiprocessing import Queue
 import time
 import csv
 import subprocess
+import argparse
 from datetime import datetime, timedelta
 from threading import Thread
 import json
@@ -10,16 +11,19 @@ import json
 
 
 
-def getVMMetrics(queue, vmId):
+def getVMMetrics(queue, vmId, interval):
     print("Getting metrics for %s" % vmId)
     metrics_start_time = (datetime.today() - timedelta(days = 60)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    metrics = json.loads(subprocess.check_output(["az", "monitor", "metrics", "list", "--start-time", metrics_start_time, "--interval", "P1D", "--resource", vmId]).decode('utf-8'))
+    metrics = json.loads(subprocess.check_output(["az", "monitor", "metrics", "list", "--start-time", metrics_start_time, "--interval", interval, "--resource", vmId]).decode('utf-8'))
     queue.put((vmId, metrics))
 
     print ("Done processing vm %s" % vmId)
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--interval", help="Interval of metrics detalization. In ISO 8601 duration format, eg \"PT1M\". Default PT1H", default="PT1H", nargs='?')
+    args = parser.parse_args()
     print ('Getting vms list')
     vms_list = json.loads(subprocess.check_output(["az", "vm", "list"]).decode('utf-8'))
     print ('Starting processing')
@@ -32,7 +36,7 @@ def main():
     results = []
     try:
         for vm in vms_list:
-            t = Thread(target=getVMMetrics, args=(q, vm['id']))
+            t = Thread(target=getVMMetrics, args=(q, vm['id'], args.interval))
             results.append(t)
             t.start()
 
