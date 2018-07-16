@@ -11,9 +11,16 @@ import json
 
 
 
-def getVMMetrics(queue, vmId, interval):
+"""
+parameters:
+    queue -- queue where we put vm metrics results
+    vmId -- vmId to work with
+    interval -- the interval in In ISO 8601 duration format, e.g. PT1M\". Default PT1H
+    days -- how many days of metrics we gather
+"""
+def getVMMetrics(queue, vmId, interval, days):
     print("Getting metrics for %s" % vmId)
-    metrics_start_time = (datetime.today() - timedelta(days = 60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    metrics_start_time = (datetime.today() - timedelta(days = days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     metrics = json.loads(subprocess.check_output(["az", "monitor", "metrics", "list", "--start-time", metrics_start_time, "--interval", interval, "--resource", vmId]).decode('utf-8'))
     queue.put((vmId, metrics))
 
@@ -23,6 +30,7 @@ def getVMMetrics(queue, vmId, interval):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--interval", help="Interval of metrics detalization. In ISO 8601 duration format, eg \"PT1M\". Default PT1H", default="PT1H", nargs='?')
+    parser.add_argument("--days", help="How many days of metrics we will gather per VM", default=60, nargs='?')
     args = parser.parse_args()
     print ('Getting vms list')
     vms_list = json.loads(subprocess.check_output(["az", "vm", "list"]).decode('utf-8'))
@@ -36,7 +44,7 @@ def main():
     results = []
     try:
         for vm in vms_list:
-            t = Thread(target=getVMMetrics, args=(q, vm['id'], args.interval))
+            t = Thread(target=getVMMetrics, args=(q, vm['id'], args.interval, args.days))
             results.append(t)
             t.start()
 
