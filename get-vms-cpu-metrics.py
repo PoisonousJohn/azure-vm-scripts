@@ -6,6 +6,7 @@ import subprocess
 import argparse
 from datetime import datetime, timedelta
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 import json
 #from multiprocessing.pool import ThreadPool
 
@@ -26,60 +27,62 @@ def getVMMetrics(queue, vmId, interval, days):
 
     print ("Done processing vm %s" % vmId)
 
+def isAnyJobAlive(jobs):
+    for j in jobs:
+        if not j.done():
+            return True
+    return False
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--interval", help="Interval of metrics detalization. In ISO 8601 duration format, eg \"PT1M\". Default PT1H", default="PT1H", nargs='?')
-    parser.add_argument("--days", help="How many days of metrics we will gather per VM", default=60, nargs='?')
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--interval", help="Interval of metrics detalization. In ISO 8601 duration format, eg \"PT1M\".", default="PT1H", nargs='?')
+    parser.add_argument("--max-workers", help="How much parallel queries to run. Lower the value to reduce memory consumption", default=50, nargs='?', type=int)
+    parser.add_argument("--days", help="How many days of metrics we will gather per VM", default=30, nargs='?', type=int)
     args = parser.parse_args()
     print ('Getting vms list')
     vms_list = json.loads(subprocess.check_output(["az", "vm", "list"]).decode('utf-8'))
     print ('Starting processing')
-    #pool = ThreadPool()
+    pool = ThreadPoolExecutor(max_workers=args.max_workers)
     q = Queue()
     vms = {}
-    metrics_per_vm = {}
     for vm in vms_list:
         vms[vm['id']] = vm
     results = []
     try:
         for vm in vms_list:
-            t = Thread(target=getVMMetrics, args=(q, vm['id'], args.interval, args.days))
-            results.append(t)
-            t.start()
+            f = pool.submit(getVMMetrics, q, vm['id'], args.interval, args.days)
+            results.append(f)
 
-        for result in results:
-            result.join()
-
-        all_metrics = []
-        columns = []
-
-        while not q.empty():
-            (vmId, metrics) = q.get()
-            timeseries = metrics['value'][0]['timeseries']
-            metrics = timeseries[0]['data'] if len(timeseries) > 0 else []
-            if not metrics:
-                continue
-            for m in metrics:
-                m['vmName'] = vms[vmId]['name']
-                if m['average'] is None:
-                    m['average'] = 0
-
-            all_metrics.extend(metrics)
-
-        if not all_metrics:
-            print("No results found")
-            return
+        headerWritten = False
 
         with open('vms_metrics.csv', 'w') as outfile:
             csv_w = csv.writer( outfile )
-            columns = all_metrics[0].keys()
-            csv_w.writerow( columns )
-            for metric in all_metrics:
-                csv_w.writerow( metric.values() )
+            while not q.empty() or isAnyJobAlive(results):
+                while not q.empty():
+
+                    (vmId, metrics) = q.get()
+                    timeseries = metrics['value'][0]['timeseries']
+                    metrics = timeseries[0]['data'] if len(timeseries) > 0 else []
+                    if not metrics:
+                        continue
+                    for m in metrics:
+                        m['vmName'] = vms[vmId]['name']
+                        if m['average'] is None:
+                            m['average'] = 0
+
+                    if not headerWritten:
+                        csv_w.writerow( metrics[0].keys() )
+                        headerWritten = True
+
+                    for m in metrics:
+                        csv_w.writerow( m.values() )
 
     except subprocess.CalledProcessError as e:
         print(e.output)
+
+    q.close()
+    q.join_thread()
+
 
 if __name__ == "__main__":
     main()
