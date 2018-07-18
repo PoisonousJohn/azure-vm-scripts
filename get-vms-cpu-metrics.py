@@ -5,6 +5,7 @@ import csv
 import subprocess
 import argparse
 from datetime import datetime, timedelta
+from dateutil import parser as dateparser
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -55,6 +56,8 @@ def main():
 
         headerWritten = False
 
+        ignore_fields = ['total', 'maximum', 'minimum', 'count']
+
         with open('vms_metrics.csv', 'w') as outfile:
             csv_w = csv.writer( outfile )
             while not q.empty() or isAnyJobAlive(results):
@@ -67,8 +70,13 @@ def main():
                         continue
                     for m in metrics:
                         m['vmName'] = vms[vmId]['name']
+                        [m.pop(f, None) for f in ignore_fields]
+                        timestamp = dateparser.parse(m['timeStamp'])
+                        m['timeStamp'] = timestamp.strftime("%m/%d/%Y %I:%M %p")
                         if m['average'] is None:
-                            m['average'] = 0
+                            m['average'] = "\"0\""
+                        else:
+                            m['average'] = str(m['average'])
 
                     if not headerWritten:
                         csv_w.writerow( metrics[0].keys() )
